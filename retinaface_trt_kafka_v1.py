@@ -118,6 +118,8 @@ class Retinaface_trt(object):
         with open(engine_file_path, "rb") as f:
             engine = runtime.deserialize_cuda_engine(f.read())
         context = engine.create_execution_context()
+        # engine_inspector = engine.create_engine_inspector()
+        # logging.info(f"ENGINE INFO: {engine_inspector.get_engine_information()}")
 
         host_inputs = []
         cuda_inputs = []
@@ -155,7 +157,7 @@ class Retinaface_trt(object):
         self.bindings = bindings
         self.batch_size = engine.max_batch_size
 
-    def infer(self, images, file_id, file_type, count_frames, timestamp):
+    def infer(self, image, file_id, file_type, count_frames, timestamp):
         threading.Thread.__init__(self)
         # Make self the active context, pushing it on top of the context stack.
         logging.info(f"Entering inference func")
@@ -170,7 +172,7 @@ class Retinaface_trt(object):
         cuda_outputs = self.cuda_outputs
         bindings = self.bindings
         # Do image preprocess
-        input_image, image_raw, origin_h, origin_w = self.preprocess_image(image_raw)
+        input_image, image_raw, origin_h, origin_w = self.preprocess_image(image)
         # batch_image_raw = []
         # batch_origin_h = []
         # batch_origin_w = []
@@ -182,12 +184,12 @@ class Retinaface_trt(object):
         #     batch_origin_w.append(origin_w)
         #     np.copyto(batch_input_image[i], input_image)
         
-        logging.info(f"Input image: {batch_input_image.shape}")
+        logging.info(f"Input image: {input_image.shape}")
         
-        batch_input_image = np.ascontiguousarray(batch_input_image)
-        logging.info(f"np.ascontig passed")
+        # batch_input_image = np.ascontiguousarray(batch_input_image)
+        # logging.info(f"np.ascontig passed")
         # Copy input image to host buffer
-        np.copyto(host_inputs[0], batch_input_image.ravel())
+        np.copyto(host_inputs[0], input_image.ravel())
         start = time.time()
         logging.info(f"np.copy passed")
         # Transfer input data  to the GPU.
@@ -210,40 +212,39 @@ class Retinaface_trt(object):
         output = host_outputs[0]
         logging.info(f"Face detection time: {end - start}")
         # Do postprocess
-        for i in range(self.batch_size):
-            result_boxes, result_scores, result_landmark = self.post_process(
-                output, origin_h, origin_w
-            )
+        result_boxes, result_scores, result_landmark = self.post_process(
+            output, origin_h, origin_w
+        )
 
-            bboxes = []
-            landmarks = []
-            if len(result_boxes)>0:
-                for i in range(len(result_boxes)):
-                    if result_landmark[i] is not None:
-                        landmark5 = result_landmark[i].numpy().astype(np.int)
-                        # aligned = align_img(image_raw, landmark5)
-                        landmark5 = landmark5.tolist()
-                        landmarks.append(landmark5)
-                        bbox = result_boxes[i].tolist()
-                        bbox = [int(x) for x in bbox]
-                        bboxes.append(bbox)
-            to_kafka = {'content_id': file_id, 'file_type': file_type, 'timestamp': timestamp}
-            if len(result_boxes)>0:
-                to_kafka['landmarks'] = landmarks
-                to_kafka['bboxes'] = bboxes
-                to_kafka['image_base64'] = img_to_base64(images[0]).decode('utf-8')
-                to_kafka['count_frames'] = count_frames
-                #print('output: ', to_kafka)    
-                    #'timestamp_detection': datetime.now().strftime("%d-%m-%Y, %H:%M:%S")}
-                logging.info(f"OUTPUT: content_id: {file_id}, file_type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}")
-                producer.send(self.kafka_producer_topic, value=to_kafka)
-            else:
-                to_kafka['bboxes'] = []
-                to_kafka['landmarks'] = []
-                producer.send(self.kafka_final_results_topic, value=to_kafka)
-                logging.info(f"OUTPUT: file id: {file_id}, file type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}")
-                # Previous push results to Redis db
-                # r.rpush(settings.REDIS_OUT_TOPIC, json.dumps(data_dict))
+        bboxes = []
+        landmarks = []
+        to_kafka = {'content_id': file_id, 'file_type': file_type, 'timestamp': timestamp}
+        if len(result_boxes)>0:
+            for i in range(len(result_boxes)):
+                if result_landmark[i] is not None:
+                    landmark5 = result_landmark[i].numpy().astype(np.int)
+                    # aligned = align_img(image_raw, landmark5)
+                    landmark5 = landmark5.tolist()
+                    landmarks.append(landmark5)
+                    bbox = result_boxes[i].tolist()
+                    bbox = [int(x) for x in bbox]
+                    bboxes.append(bbox)
+                    # Adding obtained meta
+                    to_kafka['landmarks'] = landmarks
+                    to_kafka['bboxes'] = bboxes
+                    to_kafka['image_base64'] = img_to_base64(image[0]).decode('utf-8')
+                    to_kafka['count_frames'] = count_frames
+                    # print('output: ', to_kafka)    
+                    # 'timestamp_detection': datetime.now().strftime("%d-%m-%Y, %H:%M:%S")}
+                    logging.info(f"OUTPUT: content_id: {file_id}, file_type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}")
+                    producer.send(self.kafka_producer_topic, value=to_kafka)
+        else:
+            to_kafka['bboxes'] = []
+            to_kafka['landmarks'] = []
+            producer.send(self.kafka_final_results_topic, value=to_kafka)
+            logging.info(f"OUTPUT: file id: {file_id}, file type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}")
+            # Previous push results to Redis db
+            # r.rpush(settings.REDIS_OUT_TOPIC, json.dumps(data_dict))
         # Save image
     
     def destroy(self):

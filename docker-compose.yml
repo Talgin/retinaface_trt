@@ -31,9 +31,10 @@ services:
     network_mode: "host"
     runtime: nvidia
     # command: tail -f /dev/null
-    command: sh -c 'python retinaface_redis_trt_v3.py' 
+    command: sh -c 'python retinaface_trt_kafka_v1.py' 
     restart: unless-stopped
-    working_dir: /SCRIPTS/FACE/retinaface
+    # working_dir: /SCRIPTS/FACE/retinaface
+    working_dir: /codes/tensorrtx/retinaface
     container_name: ds_face_det
     
     volumes:
@@ -54,8 +55,8 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - DETECTION_DEVICE_NO=0
       - AMOUNT_OF_FPS=5
-      - PLUGIN_LIBRARY=build/libdecodeplugin.so
-      - ENGINE_FILE_PATH=build/retina_r50_3060.engine
+      - PLUGIN_LIBRARY=build_int8/libdecodeplugin.so
+      - ENGINE_FILE_PATH=build_int8/retina_r50.engine
       - INPUT_MEDIA_STORAGE_DIR=/STORAGE/input/face
       # - DISPLAY=$DISPLAY
       - LC_ALL=C.UTF-8
