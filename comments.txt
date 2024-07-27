@@ -1,0 +1,3 @@
+retinaface - line 215 edit redis to send to kafka or mongodb - think about this logic
+
+arcface - edit line 124 to send to kafka 

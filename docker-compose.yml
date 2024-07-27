@@ -1,0 +1,92 @@
+version: '2.4'
+services:
+  PV_counter:
+    image: person_counter:v2
+    network_mode: "host"
+    runtime: nvidia
+    command: sh -c 'python car_person_count.py' 
+    # command: tail -f /dev/null
+    restart: unless-stopped
+    working_dir: /SCRIPTS/PERSON_COUNTER
+    container_name: ds_person_counter
+    
+    volumes:
+      - /mnt/hdd_4TB/POLICE/STORAGE/:/STORAGE
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./:/UTILS
+      # - /var/run/docker.sock:/var/run/docker.sock
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - KAFKA_SERVER=37.99.82.96:40002
+      - NVIDIA_VISIBLE_DEVICES=all
+      # - DISPLAY=$DISPLAY
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+
+  face_detection:
+    image: person_counter:v2
+    network_mode: "host"
+    runtime: nvidia
+    # command: tail -f /dev/null
+    command: sh -c 'python retinaface_redis_trt_v3.py' 
+    restart: unless-stopped
+    working_dir: /SCRIPTS/FACE/retinaface
+    container_name: ds_face_det
+    
+    volumes:
+      - /mnt/hdd_4TB/POLICE/STORAGE/:/STORAGE
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./:/UTILS
+      # - /var/run/docker.sock:/var/run/docker.sock
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - KAFKA_SERVER=37.99.82.96:40002
+      - KAFKA_CONSUMER_TOPIC=analytics_face
+      - KAFKA_CONSUMER_GROUP=face_analytics_group
+      - KAFKA_PRODUCER_TOPIC=face_recognition
+      - KAFKA_FINAL_RESULTS_TOPIC=face_results
+      - NVIDIA_VISIBLE_DEVICES=all
+      - DETECTION_DEVICE_NO=0
+      - AMOUNT_OF_FPS=5
+      - PLUGIN_LIBRARY=build/libdecodeplugin.so
+      - ENGINE_FILE_PATH=build/retina_r50_3060.engine
+      - INPUT_MEDIA_STORAGE_DIR=/STORAGE/input/face
+      # - DISPLAY=$DISPLAY
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+  
+  face_recognition:
+    image: person_counter:v2
+    network_mode: "host"
+    runtime: nvidia
+    # command: tail -f /dev/null
+    command: sh -c 'python arcface_redis_trt_v2.py' 
+    restart: unless-stopped
+    working_dir: /SCRIPTS/FACE/arcface
+    container_name: ds_face_reco
+    depends_on:
+      - face_detection
+    volumes:
+      - /mnt/hdd_4TB/POLICE/STORAGE/:/STORAGE
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./:/UTILS
+      # - /var/run/docker.sock:/var/run/docker.sock
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - KAFKA_SERVER=37.99.82.96:40002
+      - KAFKA_CONSUMER_GROUP=face_analytics_group
+      - KAFKA_CONSUMER_TOPIC=face_recognition
+      - KAFKA_PRODUCER_TOPIC=face_results
+      - NVIDIA_VISIBLE_DEVICES=all
+      # - DISPLAY=$DISPLAY
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8

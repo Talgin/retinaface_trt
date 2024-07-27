@@ -1,0 +1,72 @@
+version: '2.4'
+services:
+  ds_counter:
+    image: person_counter_v1:v1
+    network_mode: "host"
+    runtime: nvidia
+    command: sh -c 'python car_person_count.py' 
+    restart: unless-stopped
+    working_dir: /SCRIPTS/PERSON_COUNTER
+    container_name: ds_counter
+    
+    volumes:
+      - /TENGRI/STORAGE/:/TENGRI/STORAGE
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      # - /var/run/docker.sock:/var/run/docker.sock
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      # - DISPLAY=$DISPLAY
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+  
+  face_detection:
+    image: person_counter_v1:v1
+    network_mode: "host"
+    runtime: nvidia
+    command: sh -c 'python car_person_count.py' 
+    restart: unless-stopped
+    working_dir: /SCRIPTS/FACE
+    container_name: ds_face_reco
+    
+    volumes:
+      - /TENGRI/STORAGE/:/TENGRI/STORAGE
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      # - /var/run/docker.sock:/var/run/docker.sock
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      # - DISPLAY=$DISPLAY
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+  
+  face_recognition:
+    image: person_counter_v1:v1
+    network_mode: "host"
+    runtime: nvidia
+    command: sh -c 'python car_person_count.py' 
+    restart: unless-stopped
+    working_dir: /SCRIPTS/FACE
+    container_name: ds_face_detection
+    
+    volumes:
+      - /TENGRI/STORAGE/:/TENGRI/STORAGE
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      # - /var/run/docker.sock:/var/run/docker.sock
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      # - DISPLAY=$DISPLAY
+      - LC_ALL=C.UTF-8
+      - LANG=C.UTF-8
+
+
