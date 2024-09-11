@@ -6,18 +6,26 @@ import cv2
 from sklearn import *
 import os
 import time
-import csv
+import base64
 import time 
 from kafka import KafkaConsumer, KafkaProducer
 import json
 import threading
 from align_faces import align_img
 from turbojpeg import TurboJPEG
-from redis import Redis
-import settings
+import logging
 
-# output Redis
-r = Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=0) 
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+logging.info(f"Starting face recognition...")
+
+# output to Kafka
+KAFKA_SERVER = os.getenv('KAFKA_SERVER')
+OUTPUT_DIR_PATH = os.getenv('OUTPUT_DIR_PATH')
+
+producer = KafkaProducer(
+           bootstrap_servers=[KAFKA_SERVER],
+           value_serializer=lambda x: json.dumps(x).encode('utf-8')
+           )
 
 jpeg = TurboJPEG()
 
@@ -39,9 +47,11 @@ class myThread(threading.Thread):
         self.func(*self.args)
 
 class Arcface_trt(object):
-    def __init__(self, engine_file_path):
+    def __init__(self, engine_file_path, gpu_device_no, kafka_producer_topic):
         # Create a Context on this device,
-        self.cfx = cuda.Device(1).make_context()
+        self.gpu_device_no = int(gpu_device_no)
+        self.kafka_producer_topic = kafka_producer_topic
+        self.cfx = cuda.Device(self.gpu_device_no).make_context()
         stream = cuda.Stream()
         TRT_LOGGER = trt.Logger(trt.Logger.INFO)
         runtime = trt.Runtime(TRT_LOGGER)
@@ -67,13 +77,13 @@ class Arcface_trt(object):
             bindings.append(int(cuda_mem))
             # Append to the appropriate list.
             if engine.binding_is_input(binding):
-                print("YEEES")
+                logging.info(f"Binding is DOOOOOOOONE")
                 host_inputs.append(host_mem)
                 cuda_inputs.append(cuda_mem)
             else:
                 #print("NOOO")
                 host_outputs.append(host_mem)
-                print("NOOO")
+                logging.info(f"Binding is NOOOOONE")
                 cuda_outputs.append(cuda_mem)
         # Store
         self.stream = stream
@@ -86,12 +96,18 @@ class Arcface_trt(object):
         self.bindings = bindings
 
     #frame_path,bboxes,landmarks,sending_data
-    def infer(self, frame_path, bboxes, landmarks,message):
+    def infer(self, image_base64, bboxes, landmarks, content_id, file_type, timestamp, cnt, count_frames, file_name):
         threading.Thread.__init__(self)
         
         embs = []
-        in_file = open(frame_path, 'rb')
-        image_raw = jpeg.decode(in_file.read())
+        # in_file = open(frame_path, 'rb')
+        # image_raw = jpeg.decode(in_file.read())
+        image_raw = self.read_base64_img(image_base64)
+        # Saving frame - delete after test
+        current_dir = os.path.join(OUTPUT_DIR_PATH, content_id)
+        if not os.path.exists(current_dir):
+            os.makedirs(current_dir)
+        # cv2.imwrite(os.path.join(current_dir, str(cnt)+'.jpg'), image_raw)
         
         for i in range(len(bboxes)):
             #box_xywh = boxes2xywh(bboxes[i])
@@ -101,35 +117,48 @@ class Arcface_trt(object):
             emb = self.get_embedding(img)
             emb = self.post_process(emb)
             box_xywh = boxes2xywh(bboxes[i])
+            # res_dict = {
+            #     "x": box_xywh[0],
+            #     "y": box_xywh[1],
+            #     "width": box_xywh[2],
+            #     "height": box_xywh[3],
+            #     "vector": emb,
+            # }
             res_dict = {
-                "x": box_xywh[0],
-                "y": box_xywh[1],
-                "width": box_xywh[2],
-                "height": box_xywh[3],
                 "vector": emb,
-            }
+                "coordinates": [box_xywh[0], 
+                                box_xywh[1],
+                                box_xywh[2],
+                                box_xywh[3]],
+                "bbox": bboxes[i]
+                }
             embs.append(res_dict)
-        send_data=message
-        #del send_data["landmarks"]
-        #del send_data["bboxes"]
-        send_data['results'] = embs
-        if len(bboxes)>0:
-            #send_data=message
-            del send_data["landmarks"]
-            del send_data["bboxes"]
+        to_kafka={'content_id': content_id, 'file_type': file_type, 'timestamp': timestamp, 'frame': image_base64, 'faces': embs, 'count_frames': count_frames, 'file_name': file_name}
+        # logging.info(f"content_id': {content_id}, vector : {len(emb)}")
+        # if len(bboxes)>0:
+        #     #send_data=message
+        #     del send_data["landmarks"]
+        #     del send_data["bboxes"]
             #send_data['results'] = embs
             #sending_data['results'] = embs
             
             #print(sending_data)
+        producer.send(self.kafka_producer_topic, value=to_kafka)
+        logging.info(f"SENT TO KAFKA: file id: {content_id}, file type: {file_type}, timestamp: {timestamp}, faces: {len(embs)}, file_name: {file_name}")
         #print('sending res', sending_data)
-        r.rpush(settings.REDIS_OUT_TOPIC, json.dumps(send_data))
+        # r.rpush(settings.REDIS_OUT_TOPIC, json.dumps(send_data))
         #print('All time recognition :', time.time()-tt)
 
     def destroy(self):
         # Remove any context from the top of the context stack, deactivating it.
         self.cfx.pop()
 
-   
+    def read_base64_img(self, base64_img):
+        nparr = np.frombuffer(base64.b64decode(base64_img), np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        return img
+    
     def preprocess_image(self, img, i):
         #img = cv2.imread(PATH + str(input_image_path)+ "_" + str(i) + ".jpg")
         resized = cv2.resize(img, (112, 112), interpolation=cv2.INTER_LINEAR)
@@ -153,7 +182,7 @@ class Arcface_trt(object):
         bindings = self.bindings
         a = time.time()
         # Allocate device memory for inputs and outputs.
-        print("input shape: ", input_image.shape)
+        # print("input shape: ", input_image.shape)
         np.copyto(h_input[0], input_image.ravel())
         # Transfer input data to the GPU.
         cuda.memcpy_htod_async(d_input[0], h_input[0], stream)
@@ -175,48 +204,41 @@ class Arcface_trt(object):
         emb = emb.tolist()
         return emb
 
-arcface = Arcface_trt("build/arcface-r100.engine")
 
-KAFKA_SERVER = os.getenv('KAFKA_SERVER')
+if __name__ == "__main__":
+    # Changes to receive data from Kafka instead of Redis - reading from env variables
+    KAFKA_CONSUMER_TOPIC = os.getenv('KAFKA_CONSUMER_TOPIC')
+    KAFKA_CONSUMER_GROUP = os.getenv('KAFKA_CONSUMER_GROUP')
+    # Producer to send meta to recognition process
+    KAFKA_PRODUCER_TOPIC = os.getenv('KAFKA_PRODUCER_TOPIC')
 
-while True:
-    consumer = KafkaConsumer(
-        settings.KAFKA_CONSUMER_TOPIC,
-        bootstrap_servers=[KAFKA_SERVER],
-        auto_offset_reset='earliest',
-        enable_auto_commit=True,
-        group_id='my-group', # Change group name
-        value_deserializer=lambda x: json.loads(x.decode('utf-8')))
-    
-    print(settings.KAFKA_CONSUMER_TOPIC)
-    
-    for message in consumer:
-        #print(message)
-        message = message.value
-        print(message)
-        frame_path = message['frame_path']
-        bboxes = message['bboxes']
-        landmarks = message['landmarks']
-        #sending_data = {
-        #"frame_path": frame_path,                    
-        #"camera_id":message['camera_id'],
-        #"timestamp":message['timestamp'],                    
-        #"face":message['face'],                    
-        #"license_plate":message['license_plate'],                    
-        #"person_count":message['person_count'],                    
-        #"vehicle_count":message['vehicle_count'],
-        #}
-        #print(message)
-        thread = myThread(arcface.infer, [frame_path,bboxes,landmarks,message])
-        thread.start()
-        #print(res_kafka)
-        thread.join()
+    GPU_DEVICE_NO = os.getenv('GPU_DEVICE_NO')
+    ENGINE_FILE_PATH = os.getenv('ENGINE_FILE_PATH')
+    arcface = Arcface_trt(ENGINE_FILE_PATH, GPU_DEVICE_NO, KAFKA_PRODUCER_TOPIC)
 
+    while True:
+        consumer = KafkaConsumer(
+            KAFKA_CONSUMER_TOPIC,
+            bootstrap_servers=[KAFKA_SERVER],
+            auto_offset_reset='earliest',
+            enable_auto_commit=True,
+            group_id=KAFKA_CONSUMER_GROUP,
+            value_deserializer=lambda x: json.loads(x.decode('utf-8')))
+        cnt = 0
+        for message in consumer:
+            message = message.value
+            image_base64 = message['image_base64']
+            bboxes = message['bboxes']
+            landmarks = message['landmarks']
+            timestamp = message['timestamp']
+            file_type = message['file_type']
+            content_id = message['content_id']
+            count_frames = message['count_frames']
+            file_name = message['file_name']
+            # Sending to thread to work in parallel
+            thread = myThread(arcface.infer, [image_base64, bboxes, landmarks, content_id, file_type, timestamp, cnt, count_frames, file_name])
+            thread.start()
+            thread.join()
+            cnt += 1
 
-arcface.destroy()
-
-#img2 = cv2.imread("./align_3.jpg")
-#emb2 = get_embedding(img2)
-
-#print(compute_sim(emb1, emb2))
-#print("sim: ", similarity(emb1,emb2))
+    arcface.destroy()

@@ -157,7 +157,7 @@ class Retinaface_trt(object):
         self.bindings = bindings
         self.batch_size = engine.max_batch_size
 
-    def infer(self, image, file_id, file_type, count_frames, timestamp):
+    def infer(self, image, file_id, file_type, count_frames, timestamp, file_name):
         threading.Thread.__init__(self)
         # Make self the active context, pushing it on top of the context stack.
         logging.info(f"Entering inference func")
@@ -218,7 +218,7 @@ class Retinaface_trt(object):
 
         bboxes = []
         landmarks = []
-        to_kafka = {'content_id': file_id, 'file_type': file_type, 'timestamp': timestamp}
+        to_kafka = {'content_id': file_id, 'file_type': file_type, 'timestamp': timestamp, 'file_name': file_name}
         if len(result_boxes)>0:
             for i in range(len(result_boxes)):
                 if result_landmark[i] is not None:
@@ -232,17 +232,17 @@ class Retinaface_trt(object):
                     # Adding obtained meta
                     to_kafka['landmarks'] = landmarks
                     to_kafka['bboxes'] = bboxes
-                    to_kafka['image_base64'] = img_to_base64(image[0]).decode('utf-8')
+                    to_kafka['image_base64'] = img_to_base64(image).decode('utf-8')
                     to_kafka['count_frames'] = count_frames
                     # print('output: ', to_kafka)    
                     # 'timestamp_detection': datetime.now().strftime("%d-%m-%Y, %H:%M:%S")}
-                    logging.info(f"OUTPUT: content_id: {file_id}, file_type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}")
+                    logging.info(f"OUTPUT: content_id: {file_id}, file_type: {file_type}, timestamp: {timestamp}, frame_count: {count_frames}, boxes: {len(bboxes)}, file_name: {file_name}")
                     producer.send(self.kafka_producer_topic, value=to_kafka)
         else:
             to_kafka['bboxes'] = []
             to_kafka['landmarks'] = []
             producer.send(self.kafka_final_results_topic, value=to_kafka)
-            logging.info(f"OUTPUT: file id: {file_id}, file type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}")
+            logging.info(f"OUTPUT: file id: {file_id}, file type: {file_type}, timestamp: {timestamp}, faces: {to_kafka}, file_name: {file_name}")
             # Previous push results to Redis db
             # r.rpush(settings.REDIS_OUT_TOPIC, json.dumps(data_dict))
         # Save image
@@ -427,6 +427,7 @@ class myThread(threading.Thread):
 
 def getImagesFromFile(file_folder, video_fps):
     images = []
+    file_names = []
     status = False
     videoExtensions = {'mp4', 'avi', 'mov'}
     imageExtensions = {'png', 'jpeg', 'jpg'}
@@ -447,15 +448,19 @@ def getImagesFromFile(file_folder, video_fps):
                             images.append(image)
                     count += 1
                 vidObj.release()
+                file_names.append(os.path.basename(file_path))
                 status = True
                 file_type = 'video'
             elif fileFormat in imageExtensions:
                 img = cv2.imread(file_path)
                 images.append(img)
+                file_names.append(os.path.basename(file_path))
                 status = True
                 file_type = 'image'
+            else:
+                continue
 
-    return images, file_type, status
+    return images, file_type, status, file_names
 
 
 if __name__ == "__main__":
@@ -496,12 +501,15 @@ if __name__ == "__main__":
             timestamp = message['timestamp']
             media_type = message['media_type'].split('/')[0]
             folder_path = os.path.join(INPUT_MEDIA_STORAGE_DIR, file_id)
-            frames, file_type, status = getImagesFromFile(folder_path, int(VIDEO_FPS))
-            logging.info(f"INPUT: file id: {file_id}, time: {timestamp}, file status: {status}, file type: {file_type}, frames_count: {len(frames)}")
+            frames, file_type, status, file_names = getImagesFromFile(folder_path, int(VIDEO_FPS))
+            logging.info(f"INPUT: file id: {file_id}, time: {timestamp}, file status: {status}, file type: {file_type}, frames_count: {len(frames)}, file_names: {file_names}")
+            cnt = 0
             for frame in frames:
-                thread1 = myThread(retinaface.infer, [frame, file_id, file_type, len(frames), timestamp])
+                thread1 = myThread(retinaface.infer, [frame, file_id, file_type, len(frames), timestamp, file_names[cnt]])
                 thread1.start()
                 thread1.join()
+                if file_type == "image":
+                    cnt += 1
         except Exception as e:
             logging.info(f"messeage error: {e}")
 

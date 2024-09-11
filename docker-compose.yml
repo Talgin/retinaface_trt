@@ -54,10 +54,10 @@ services:
       - KAFKA_FINAL_RESULTS_TOPIC=face_results
       - NVIDIA_VISIBLE_DEVICES=all
       - DETECTION_DEVICE_NO=0
-      - AMOUNT_OF_FPS=5
+      - AMOUNT_OF_FPS=3
       - PLUGIN_LIBRARY=build_int8/libdecodeplugin.so
       - ENGINE_FILE_PATH=build_int8/retina_r50.engine
-      - INPUT_MEDIA_STORAGE_DIR=/STORAGE/input/face
+      - INPUT_MEDIA_STORAGE_DIR=/STORAGE/input/analytics_face
       # - DISPLAY=$DISPLAY
       - LC_ALL=C.UTF-8
       - LANG=C.UTF-8
@@ -67,9 +67,9 @@ services:
     network_mode: "host"
     runtime: nvidia
     # command: tail -f /dev/null
-    command: sh -c 'python arcface_redis_trt_v2.py' 
+    command: sh -c 'python arcface_trt_kafka_v1.py' 
     restart: unless-stopped
-    working_dir: /SCRIPTS/FACE/arcface
+    working_dir: /codes/tensorrtx/arcface
     container_name: ds_face_reco
     depends_on:
       - face_detection
@@ -88,6 +88,9 @@ services:
       - KAFKA_CONSUMER_TOPIC=face_recognition
       - KAFKA_PRODUCER_TOPIC=face_results
       - NVIDIA_VISIBLE_DEVICES=all
+      - ENGINE_FILE_PATH=build/arcface-r100.engine
+      - GPU_DEVICE_NO=1
       # - DISPLAY=$DISPLAY
       - LC_ALL=C.UTF-8
       - LANG=C.UTF-8
+      - OUTPUT_DIR_PATH=/STORAGE/output/analytics_face
