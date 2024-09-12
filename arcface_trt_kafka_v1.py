@@ -19,11 +19,12 @@ logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 logging.info(f"Starting face recognition...")
 
 # output to Kafka
-KAFKA_SERVER = os.getenv('KAFKA_SERVER')
+# KAFKA_INPUT_SERVER = os.getenv('KAFKA_INPUT_SERVER')
+KAFKA_DS_SERVER = os.getenv('KAFKA_DS_SERVER')
 OUTPUT_DIR_PATH = os.getenv('OUTPUT_DIR_PATH')
 
 producer = KafkaProducer(
-           bootstrap_servers=[KAFKA_SERVER],
+           bootstrap_servers=[KAFKA_DS_SERVER],
            value_serializer=lambda x: json.dumps(x).encode('utf-8')
            )
 
@@ -219,7 +220,7 @@ if __name__ == "__main__":
     while True:
         consumer = KafkaConsumer(
             KAFKA_CONSUMER_TOPIC,
-            bootstrap_servers=[KAFKA_SERVER],
+            bootstrap_servers=[KAFKA_DS_SERVER],
             auto_offset_reset='earliest',
             enable_auto_commit=True,
             group_id=KAFKA_CONSUMER_GROUP,

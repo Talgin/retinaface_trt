@@ -47,7 +47,8 @@ services:
       memlock: -1
       stack: 67108864
     environment:
-      - KAFKA_SERVER=37.99.82.96:40002
+      - KAFKA_INPUT_SERVER=37.99.82.96:40002
+      - KAFKA_DS_SERVER=37.99.82.96:40002
       - KAFKA_CONSUMER_TOPIC=analytics_face
       - KAFKA_CONSUMER_GROUP=face_analytics_group
       - KAFKA_PRODUCER_TOPIC=face_recognition
@@ -83,7 +84,7 @@ services:
       memlock: -1
       stack: 67108864
     environment:
-      - KAFKA_SERVER=37.99.82.96:40002
+      - KAFKA_DS_SERVER=37.99.82.96:40002
       - KAFKA_CONSUMER_GROUP=face_analytics_group
       - KAFKA_CONSUMER_TOPIC=face_recognition
       - KAFKA_PRODUCER_TOPIC=face_results

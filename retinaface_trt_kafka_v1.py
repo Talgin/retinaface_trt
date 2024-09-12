@@ -41,10 +41,10 @@ logging.info(f"Starting face detection...")
 
 jpeg = TurboJPEG()
 
-KAFKA_SERVER = os.getenv('KAFKA_SERVER')
+KAFKA_DS_SERVER = os.getenv('KAFKA_DS_SERVER')
 
 producer = KafkaProducer(
-           bootstrap_servers=[KAFKA_SERVER],
+           bootstrap_servers=[KAFKA_DS_SERVER],
            value_serializer=lambda x: json.dumps(x).encode('utf-8')
            )
 print(producer)
@@ -465,8 +465,8 @@ def getImagesFromFile(file_folder, video_fps):
 
 if __name__ == "__main__":
     # Changes to receive data from Kafka instead of Redis - reading from env variables
-    # Consumer to consumer input from backend (images)
-    KAFKA_SERVER = os.getenv('KAFKA_SERVER')
+    # Consumer to consume input from backend (images)
+    KAFKA_INPUT_SERVER = os.getenv('KAFKA_INPUT_SERVER')
     KAFKA_CONSUMER_TOPIC = os.getenv('KAFKA_CONSUMER_TOPIC')
     KAFKA_CONSUMER_GROUP = os.getenv('KAFKA_CONSUMER_GROUP')
     # Producer to send meta to recognition process
@@ -485,7 +485,7 @@ if __name__ == "__main__":
     # Kafka Consumer
     consumer = KafkaConsumer(
         KAFKA_CONSUMER_TOPIC,
-        bootstrap_servers=[KAFKA_SERVER],
+        bootstrap_servers=[KAFKA_INPUT_SERVER],
         auto_offset_reset='earliest',
         enable_auto_commit=True,
         group_id=KAFKA_CONSUMER_GROUP,
