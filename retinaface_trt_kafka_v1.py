@@ -28,6 +28,7 @@ from turbojpeg import TurboJPEG
 # from redis import Redis
 import glob
 import logging
+from datetime import datetime
 
 logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 
@@ -236,7 +237,7 @@ class Retinaface_trt(object):
                     to_kafka['count_frames'] = count_frames
                     # print('output: ', to_kafka)    
                     # 'timestamp_detection': datetime.now().strftime("%d-%m-%Y, %H:%M:%S")}
-                    logging.info(f"OUTPUT: content_id: {file_id}, file_type: {file_type}, timestamp: {timestamp}, frame_count: {count_frames}, boxes: {len(bboxes)}, file_name: {file_name}")
+                    logging.info(f"OUTPUT: content_id: {file_id}, file_type: {file_type}, timestamp: {timestamp} frame_count: {count_frames}, boxes: {len(bboxes)}, file_name: {file_name}")
                     producer.send(self.kafka_producer_topic, value=to_kafka)
         else:
             to_kafka['bboxes'] = []
@@ -498,7 +499,8 @@ if __name__ == "__main__":
         try:
             message = message.value
             file_id = message['incident_id']
-            timestamp = message['timestamp']
+            # timestamp = message['timestamp']
+            timestamp = datetime.now().isoformat()
             media_type = message['media_type'].split('/')[0]
             folder_path = os.path.join(INPUT_MEDIA_STORAGE_DIR, file_id)
             frames, file_type, status, file_names = getImagesFromFile(folder_path, int(VIDEO_FPS))

@@ -54,7 +54,7 @@ services:
       - KAFKA_PRODUCER_TOPIC=face_recognition
       - KAFKA_FINAL_RESULTS_TOPIC=face_results
       - NVIDIA_VISIBLE_DEVICES=all
-      - DETECTION_DEVICE_NO=0
+      - DETECTION_DEVICE_NO=1
       - AMOUNT_OF_FPS=3
       - PLUGIN_LIBRARY=build_int8/libdecodeplugin.so
       - ENGINE_FILE_PATH=build_int8/retina_r50.engine
